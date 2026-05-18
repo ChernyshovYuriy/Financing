@@ -17,7 +17,7 @@ Fixes applied vs original:
   #10 Stale data check — rejects tickers with last bar > 5 trading days old
 
 Run from IDE:
-    from swing_tickers import UniverseBuilderConfig, run_universe_builder
+    from swing_universe import UniverseBuilderConfig, run_universe_builder
     run_universe_builder(UniverseBuilderConfig(...))
 """
 
@@ -513,18 +513,36 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out",
         type=str,
-        help="Path to output file",
-        default="../out/can_tickers_swing"
+        help="Path to swing universe output file (one ticker per line)",
+        default="../data/can_tickers_swing_universe"
+    )
+    parser.add_argument(
+        "--out-one-line",
+        type=str,
+        help="Path to comma-separated output file",
+        default="../out/can_tickers_swing_one_line"
+    )
+    parser.add_argument(
+        "--out-rejected",
+        type=str,
+        help="Path to rejected tickers CSV",
+        default="../out/can_tickers_rejected.csv"
+    )
+    parser.add_argument(
+        "--input",
+        type=str,
+        help="Path to input ticker file",
+        default="../data/can_tickers_full"
     )
 
     args = parser.parse_args()
 
     config = UniverseBuilderConfig(
-        tickers_path="../data/can_tickers_full",
+        tickers_path=args.input,
         benchmark="XIU.TO",
         out_file_path=args.out,
-        out_one_line_file_path="../out/can_tickers_swing_one_line",
-        out_rejected_file_path="../out/can_tickers_rejected.csv",
+        out_one_line_file_path=args.out_one_line,
+        out_rejected_file_path=args.out_rejected,
         period="1y",
         interval="1d",
         auto_adjust=True,

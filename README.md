@@ -1,10 +1,8 @@
 # Financing (Python utilities)
 
-A small “entry-point” repo that hosts my Python finance utilities and shared helpers used across my other projects.
+A small "entry-point" repo that hosts my Python finance utilities and shared helpers used across my other projects.
 
-Right now, the main utility here is **Swing Tickers (Universe Builder)**: it takes a raw universe of Canadian tickers and filters/ranks the ones that look suitable for **1–3 week swing trading**, using daily data from Yahoo Finance via `yfinance`.
-
-> **Disclaimer**: This is not financial advice. It’s a screening/ranking tool, not a trading system.
+> **Disclaimer**: This is not financial advice. It's a screening/ranking tool, not a trading system.
 
 ---
 
@@ -13,10 +11,21 @@ Right now, the main utility here is **Swing Tickers (Universe Builder)**: it tak
 ```
 .
 ├─ data/
-│  └─ can_tickers                 # one ticker per line (Yahoo format: .TO/.V/.CN/...)
+│  ├─ can_tickers                   # curated hand-maintained ticker list
+│  ├─ can_tickers_full              # full Yahoo CA market dump (fetch_tickers.py)
+│  ├─ can_tickers_swing_universe    # output of swing_universe.py
+│  └─ can_tickers_value_universe    # output of value_universe.py
+├─ out/
+│  ├─ can_tickers_swing_one_line    # comma-separated swing universe
+│  └─ can_tickers_rejected.csv      # rejected tickers + reasons
 ├─ py/
-│  └─ swing_tickers.py            # universe builder / screener
-│  └─ tickers_info.py             # ticker metadata/market info builder
+│  ├─ swing_universe.py             # swing trading universe builder
+│  ├─ value_universe.py             # value screening universe builder
+│  ├─ tickers_info.py               # ticker metadata builder
+│  ├─ wheel_screener.py             # Wheel strategy options screener
+│  ├─ fetch_tickers.py              # downloads full CA market ticker list
+│  ├─ test_swing_universe.py        # 115 tests for swing_universe.py
+│  └─ test_value_universe.py        # 40 tests for value_universe.py
 ├─ requirements.txt
 └─ README.md
 ```
@@ -25,82 +34,108 @@ Right now, the main utility here is **Swing Tickers (Universe Builder)**: it tak
 
 ## Requirements
 
-- Python 3.10+ recommended
-- Packages:
-  - `yfinance`
-  - `pandas`
-  - `numpy`
-
-Install:
+- Python 3.10+
+- Packages: `yfinance`, `pandas`, `numpy`
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # (Linux/macOS)
+source .venv/bin/activate   # Linux/macOS
 
 pip install -r requirements.txt
+pip install tabulate         # optional: prettier output in wheel_screener
 ```
 
 ---
 
-## Swing Tickers (Universe Builder)
+## Running the tests
+
+Both test suites run fully offline — yfinance is mocked, no network calls.
+
+```bash
+# Swing universe builder — 115 tests
+python -m pytest py/test_swing_universe.py -v
+
+# Value universe builder — 40 tests
+python -m pytest py/test_value_universe.py -v
+
+# Both suites at once
+python -m pytest py/test_swing_universe.py py/test_value_universe.py -v
+```
+
+What the swing suite covers: every public function, all 6 filter branches and their
+boundary conditions (strict `<`/`>` semantics), all scoring components and caps, gap-risk
+ATR capture, relative-strength computation, stale-data tz handling, MultiIndex and
+flat-DataFrame yfinance paths, batch-exception recovery, and all three output files.
+
+---
+
+## Swing Universe Builder (`py/swing_universe.py`)
 
 ### What it does
 
-Given a text file of tickers (one per line), it downloads daily OHLCV history and computes a set of liquidity + volatility + trend/RS checks. It then outputs:
+Given a text file of tickers (one per line), downloads 1 year of daily OHLCV history and
+applies a filter + scoring pipeline to identify Canadian stocks suitable for **1–4 week
+swing trades**. Outputs a ranked universe file suitable for feeding into other scanners.
 
-1. **Tradable tickers** (newline-separated) — good for feeding into other scanners/tools
-2. **Tradable tickers (comma-separated)** — one-line format (handy for quick copy/paste)
-3. **Rejected tickers CSV** — includes *rejection reasons* for diagnostics
+### Pipeline
 
-### Input format
+1. Loads tickers from input file (deduplicates, strips comments)
+2. Fetches benchmark (XIU.TO) once for relative-strength comparison
+3. Downloads history in batches of 80 (sleeps between batches to avoid rate limits)
+4. Per ticker: ATR-14, dollar volume, SMA50/200, worst 1-day return, SMA50 slope,
+   RS vs benchmark, volume trend
+5. Hard filters (`Thresholds`): price, dollar volume, ATR%, worst-day drop, above SMA50,
+   stale data — tickers failing any are written to the rejected CSV with reasons
+6. Scores passing tickers across 7 dimensions and sorts descending
 
-- One ticker per line
-- Yahoo symbols (for Canada commonly: `.TO`, `.V`, `.CN`, sometimes `.NE`, etc.)
-- Example:
+### Filters (hard gates)
 
-```
-BCE.TO
-ENB.TO
-CVE.TO
-SHOP.TO
-```
+| Threshold | Default | Rationale |
+|-----------|---------|-----------|
+| `min_price` | $1.00 | Excludes penny stocks and manipulation-prone names |
+| `min_avg_dollar_vol_20` | $1,000,000 | Enough liquidity to enter/exit without slippage |
+| `max_atr_pct_14` | 5% | ATR > 5% means stops are impractically wide for 1–4w swings |
+| `max_one_day_drop_126` | −15% | Screens out gap-down risk; one day ≥ 15% drop is a red flag |
+| `require_above_50d` | True | Only trade in direction of intermediate trend |
+| `max_stale_days` | 5 | Reject tickers with no recent price data |
 
-Repo already includes a universe file at:
+### Scoring components
 
-- `data/can_tickers`
+| Component | Max pts | Notes |
+|-----------|---------|-------|
+| Liquidity (log scale) | +3.0 | log10(dollar_vol) − 5, capped |
+| Above SMA50 | +1.0 | Hard filter already gates this |
+| Above SMA200 | +2.0 | Strong trend bonus (FIX #2: raised from +0.8) |
+| SMA50 slope | +1.5 | Normalized by price, capped |
+| RS 1-month vs XIU | +2.0 / −2.0 | Outperformance vs benchmark |
+| RS 3-month vs XIU | +1.5 / −1.5 | Confirmation of RS signal |
+| Volume trend | +1.3 | +0.8 base + up to +0.5 for strong accumulation |
+| ATR penalty | −2.0 | 0.05 × 15 = 0.75 max for a passing stock |
+| Worst-day penalty | −2.5 | 0.15 × 10 = 1.5 max for a passing stock |
 
----
-
-## How to run
-
-### Option A — run as-is
-
-Run it **from root**.
+### How to run
 
 ```bash
-python swing_tickers.py
+# Default: reads data/can_tickers_full, writes data/can_tickers_swing_universe
+cd py && python swing_universe.py
+
+# Custom paths
+cd py && python swing_universe.py \
+    --input ../data/can_tickers \
+    --out ../data/can_tickers_swing_universe \
+    --out-one-line ../out/can_tickers_swing_one_line \
+    --out-rejected ../out/can_tickers_rejected.csv
 ```
 
-It will write to:
-
-- `out/can_tickers_swing` (newline-separated tickers)
-- `out/can_tickers_swing_one_line` (comma-separated tickers)
-- `out/can_tickers_rejected.csv` (rejected tickers + reasons)
-
-It will also print:
-- counts (tradable/rejected/total)
-- **Top 20 tradable** with key metrics
-- a rejection reason breakdown
-
-### Option B — run from code (IDE / other scripts)
+### From code (IDE / other scripts)
 
 ```python
-from swing_tickers import UniverseBuilderConfig, Thresholds, run_universe_builder
+from swing_universe import UniverseBuilderConfig, Thresholds, run_universe_builder
 
 cfg = UniverseBuilderConfig(
     tickers_path="../data/can_tickers",
     benchmark="XIU.TO",
-    out_file_path="../out/can_tickers_swing",
+    out_file_path="../data/can_tickers_swing_universe",
     out_one_line_file_path="../out/can_tickers_swing_one_line",
     out_rejected_file_path="../out/can_tickers_rejected.csv",
     period="1y",
@@ -123,118 +158,27 @@ df_tradable, df_rejected = run_universe_builder(cfg)
 print(df_tradable.head())
 ```
 
----
+### Outputs
 
-## Tickers Info Builder
-
-### What it does
-
-Given a text file of tickers (one per line), it fetches metadata from Yahoo Finance and writes a CSV with:
-
-- `ticker`
-- `exchange`
-- `company_name`
-- `aliases` (ticker without exchange suffix, e.g. `RY.TO -> RY`)
-- `sector`
-- `average_volume`
-- `market_cap`
-- `last_price`
-- `spread_estimate`
-
-`spread_estimate` is computed as `ask - bid` when both are available; otherwise it falls back to `fallback_spread_pct * last_price` (default: `1%`).
-
-### How to run
-
-Run it from repo root:
-
-```bash
-python py/tickers_info.py --input data/can_tickers --out out/can_tickers_info.csv
-```
-
-Optional arguments:
-
-- `--fallback-spread-pct` (default `0.01`)
-- `--batch-size` (default `80`)
-- `--sleep` (default `1.0` seconds)
-
-### Output
-
-- **`out/can_tickers_info.csv`**
-  - one row per ticker with metadata + liquidity-related fields
-
----
-
-## Filtering & scoring logic (high-level)
-
-The screener is designed to find names that are:
-- **liquid enough** to trade (proxy: price × volume)
-- not **too volatile** for practical swing stops (ATR% constraint)
-- not obviously “falling off a cliff” (worst 1-day drop over ~6 months)
-- preferably aligned with trend (above key moving averages)
-- showing some **relative strength** vs a benchmark (default: `XIU.TO`)
-- avoiding stale/illiquid tickers (last bar not too old)
-
-Key thresholds (defaults in `Thresholds`):
-
-- `min_price`  
-  Minimum last close (default `1.0`)
-
-- `min_avg_dollar_vol_20`  
-  20-day average dollar volume proxy (default `1,000,000`)
-
-- `max_atr_pct_14`  
-  14-day ATR normalized by price (default `0.05` = 5%)
-
-- `max_one_day_drop_126`  
-  Worst daily return over ~126 trading days (default `-0.15`)
-
-- `require_above_50d`  
-  Hard gate: require above SMA50 (default `True`)
-
-- `prefer_above_200d`  
-  Soft preference: above SMA200 boosts score (default `True`)
-
-- `max_stale_days`  
-  Reject if last bar is older than N trading days (default `5`)
-
-Also included:
-- **Volume trend** check (`vol_sma20 > vol_sma50`)
-- **Relative strength** vs benchmark (`rs_1m`, `rs_3m`)
-- SMA50 slope normalized by mean price (cross-ticker comparable)
-
----
-
-## Output files
-
-After a run, you’ll have:
-
-- **`out/can_tickers_swing`**
-  - one ticker per line (easy to load)
-
-- **`out/can_tickers_swing_one_line`**
-  - single line, comma-separated tickers
-
-- **`out/can_tickers_rejected.csv`**
-  - rejected symbols + one or more `reject_reasons`
+| File | Format | Contents |
+|------|--------|----------|
+| `data/can_tickers_swing_universe` | one ticker per line | Ranked tradable universe — load directly into other tools |
+| `out/can_tickers_swing_one_line` | single comma-separated line | Quick copy/paste format |
+| `out/can_tickers_rejected.csv` | CSV | Rejected tickers + `reject_reasons` column for diagnostics |
 
 Tip: when tuning thresholds, the rejected CSV is the fastest way to see *why* names are failing.
+Filter rejection reasons: `price_too_low`, `low_dollar_volume`, `too_volatile_atr`,
+`large_gap_risk`, `below_50d`, `stale_data_Nd`.
 
 ---
 
-## Notes on data quality
-
-- The script uses `auto_adjust=True` by default to reduce issues from splits/dividends when computing SMA/ATR/returns.
-- Yahoo data can be missing or inconsistent for some tickers; the code guards against common failure modes and tracks rejections.
-
----
-
-## Value Universe Builder
+## Value Universe Builder (`py/value_universe.py`)
 
 ### What it does
 
 Filters the full Canadian ticker universe (`data/can_tickers_full`, ~4,700 tickers) down to
-a sub-list of quality, liquid, profitable equities suitable for value factor screening.
-It is **not** a value scorer — it just produces a clean input list for a downstream screener.
+a sub-list of quality, liquid, profitable equities suitable for downstream value factor
+screening. Not a value scorer — just a clean input list.
 
 ### How to run
 
@@ -253,44 +197,83 @@ python py/value_universe.py --min-market-cap 1000000000 --min-dollar-volume 5000
 ```
 
 Output is written to `data/can_tickers_value_universe` (one ticker per line).
-Errors and missing-data drops are logged to `logs/value_universe_errors.log`.
+Errors are logged to `logs/value_universe_errors.log`.
 yfinance responses are cached in `.cache/yfinance/` with a 24-hour TTL.
 
 ### Filters (applied in order)
 
 | # | Filter | Default | Why |
 |---|--------|---------|-----|
-| 1 | **Exchange** — drop `.V` (TSX Venture) | enabled | Venture tickers are micro-caps with thin liquidity and sparse fundamental data |
-| 2 | **Market cap floor** | CAD 500M | Ensures enough analyst coverage and fundamental data quality |
-| 3 | **Liquidity floor** | CAD 1M avg daily dollar vol (30d) | Minimum tradability; illiquid names have wide spreads and unreliable quotes |
-| 4 | **Fundamentals present** | trailing P/E, book value, revenue | Value ratios are meaningless without these; missing data signals data-quality issues |
-| 5 | **Equity only** | `quoteType == EQUITY` | Drops ETFs, closed-end funds, trusts — different valuation frameworks |
-| 6 | **Positive earnings** | trailing EPS > 0 | Standard value screens assume earnings; negative EPS makes P/E undefined |
+| 1 | **Exchange** — drop `.V` (TSX Venture) | enabled | Micro-caps with thin liquidity and sparse data |
+| 2 | **Market cap floor** | CAD 500M | Analyst coverage and fundamental data quality |
+| 3 | **Liquidity floor** | CAD 1M avg daily dollar vol (30d) | Minimum tradability |
+| 4 | **Fundamentals present** | trailing P/E, book value, revenue | Value ratios require these; missing = data quality issue |
+| 5 | **Equity only** | `quoteType == EQUITY` | Drops ETFs, closed-end funds, trusts |
+| 6 | **Positive earnings** | trailing EPS > 0 | Negative EPS makes P/E undefined |
 
-Use `--include-venture`, `--include-unprofitable`, and the threshold flags to relax any filter.
+Use `--include-venture`, `--include-unprofitable`, and the threshold flags to relax filters.
 
-### Tests
+---
+
+## Ticker Metadata Builder (`py/tickers_info.py`)
+
+Fetches Yahoo Finance metadata for a ticker list and writes a CSV with exchange, company
+name, sector, volume, market cap, price, and spread estimate.
 
 ```bash
-python -m pytest py/test_value_universe.py -v
+python py/tickers_info.py --input data/can_tickers --out out/can_tickers_info.csv
 ```
 
-No network calls — yfinance is fully mocked. 40 tests covering every filter branch, cache TTL, and I/O helpers.
+Optional: `--fallback-spread-pct` (default `0.01`), `--batch-size` (default `80`),
+`--sleep` (default `1.0` s).
+
+---
+
+## Wheel Strategy Screener (`py/wheel_screener.py`)
+
+Screens CA + US stocks for the Wheel strategy (sell Cash-Secured Puts → Covered Calls).
+Scores across 6 pillars (profitability, FCF, balance sheet, valuation, growth, options chain)
+and assigns tiers: STRONG / SOLID / WATCH / SKIP.
+
+```bash
+cd py && python wheel_screener.py
+```
+
+Outputs `wheel_candidates.csv`, `wheel_all_screened.csv`, `wheel_candidates.json`
+(relative to `py/`).
+
+---
+
+## Canadian Market Download (`py/fetch_tickers.py`)
+
+Downloads the full Yahoo Finance Canadian equity universe and writes it to
+`data/can_tickers_full` (used as input for `swing_universe.py` and `value_universe.py`).
+
+```bash
+cd py && python fetch_tickers.py
+```
+
+---
+
+## Notes on data quality
+
+- `auto_adjust=True` is used in all `yf.download()` calls to eliminate split/dividend
+  artifacts from SMA, ATR, and return calculations.
+- `yf.download()` with multiple tickers returns a `pd.MultiIndex` DataFrame (level 0 =
+  ticker); single-ticker responses return a flat DataFrame — both paths are handled.
+- Yahoo data can be missing or inconsistent; the code guards against common failure modes
+  and tracks every rejection with a typed reason.
 
 ---
 
 ## Related projects
 
-This repo is intended to be a shared hub for finance-related tooling.
-
 - Stage Radar: [https://github.com/ChernyshovYuriy/stage-radar](https://github.com/ChernyshovYuriy/stage-radar)
-
 - Point & Figure System: [https://github.com/ChernyshovYuriy/pfsystem](https://github.com/ChernyshovYuriy/pfsystem)
-
 - TSX Canadian Stock Screener: [https://github.com/ChernyshovYuriy/stock-scanner](https://github.com/ChernyshovYuriy/stock-scanner)
 
 ---
 
 ## License
 
-- MIT
+MIT
