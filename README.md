@@ -228,6 +228,57 @@ Tip: when tuning thresholds, the rejected CSV is the fastest way to see *why* na
 
 ---
 
+## Value Universe Builder
+
+### What it does
+
+Filters the full Canadian ticker universe (`data/can_tickers_full`, ~4,700 tickers) down to
+a sub-list of quality, liquid, profitable equities suitable for value factor screening.
+It is **not** a value scorer — it just produces a clean input list for a downstream screener.
+
+### How to run
+
+```bash
+# Default run (from repo root)
+python py/value_universe.py
+
+# Test on first 50 tickers
+python py/value_universe.py --limit 50
+
+# Force fresh data, skip cache
+python py/value_universe.py --no-cache
+
+# Custom thresholds
+python py/value_universe.py --min-market-cap 1000000000 --min-dollar-volume 5000000
+```
+
+Output is written to `data/can_tickers_value_universe` (one ticker per line).
+Errors and missing-data drops are logged to `logs/value_universe_errors.log`.
+yfinance responses are cached in `.cache/yfinance/` with a 24-hour TTL.
+
+### Filters (applied in order)
+
+| # | Filter | Default | Why |
+|---|--------|---------|-----|
+| 1 | **Exchange** — drop `.V` (TSX Venture) | enabled | Venture tickers are micro-caps with thin liquidity and sparse fundamental data |
+| 2 | **Market cap floor** | CAD 500M | Ensures enough analyst coverage and fundamental data quality |
+| 3 | **Liquidity floor** | CAD 1M avg daily dollar vol (30d) | Minimum tradability; illiquid names have wide spreads and unreliable quotes |
+| 4 | **Fundamentals present** | trailing P/E, book value, revenue | Value ratios are meaningless without these; missing data signals data-quality issues |
+| 5 | **Equity only** | `quoteType == EQUITY` | Drops ETFs, closed-end funds, trusts — different valuation frameworks |
+| 6 | **Positive earnings** | trailing EPS > 0 | Standard value screens assume earnings; negative EPS makes P/E undefined |
+
+Use `--include-venture`, `--include-unprofitable`, and the threshold flags to relax any filter.
+
+### Tests
+
+```bash
+python -m pytest py/test_value_universe.py -v
+```
+
+No network calls — yfinance is fully mocked. 40 tests covering every filter branch, cache TTL, and I/O helpers.
+
+---
+
 ## Related projects
 
 This repo is intended to be a shared hub for finance-related tooling.

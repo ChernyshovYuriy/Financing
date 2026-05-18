@@ -1,3 +1,5 @@
 .idea
 out
+logs
 __pycache__/
+.cache

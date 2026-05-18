@@ -58,7 +58,7 @@ warnings.filterwarnings("ignore")
 # Canadian tickers use the .TO suffix (TSX); .V for TSX Venture.
 # ══════════════════════════════════════════════════════════════════════
 
-CANADIAN_STOCKS = {
+CANADIAN_STOCKS_BASE = {
     "CA_Banks": ["RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "NA.TO"],
     "CA_Insurance": ["MFC.TO", "SLF.TO", "IFC.TO", "FFH.TO"],
     "CA_Energy": ["CNQ.TO", "SU.TO", "CVE.TO", "ARX.TO", "TOU.TO"],
@@ -84,6 +84,148 @@ US_STOCKS = {
     "US_Utilities": ["NEE", "DUK", "SO", "D", "AEP", "EXC", "SRE", "XEL"],
     "US_REITS": ["PLD", "AMT", "EQIX", "PSA", "WPC", "O", "VICI", "DLR"],
     "US_Materials": ["LIN", "APD", "NEM", "FCX", "NUE", "VMC", "MLM"],
+}
+
+CANADIAN_STOCKS = {
+
+    # 🏦 Banks (core liquidity / options heavy)
+    "CA_Banks": [
+        "RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "NA.TO"
+    ],
+
+    # 🛡️ Insurance / Financial Services
+    "CA_Insurance": [
+        "MFC.TO", "SLF.TO", "GWO.TO", "IFC.TO", "POW.TO", "IGM.TO"
+    ],
+
+    # 🛢️ Energy – Integrated / Pipelines
+    "CA_Energy_Majors": [
+        "SU.TO", "CNQ.TO", "CVE.TO", "IMO.TO",
+        "ENB.TO", "TRP.TO", "PPL.TO", "KEY.TO"
+    ],
+
+    # 🛢️ Energy – E&P (higher beta, wheel candidates)
+    "CA_Energy_E&P": [
+        "ARX.TO", "TOU.TO", "WCP.TO", "TVE.TO", "PEY.TO",
+        "BTE.TO", "AAV.TO", "VET.TO", "CJ.TO", "SGY.TO",
+        "OBE.TO", "PHX.TO", "POU.TO"
+    ],
+
+    # ⛏️ Gold / Precious Metals
+    "CA_Gold": [
+        "ABX.TO", "AEM.TO", "K.TO", "FNV.TO", "WPM.TO",
+        "EQX.TO", "SSRM.TO", "AGI.TO", "OGC.TO"
+    ],
+
+    # ⛏️ Silver / Precious
+    "CA_Silver": [
+        "PAAS.TO", "AG.TO", "SVM.TO"
+    ],
+
+    # ⛏️ Base Metals / Diversified Mining
+    "CA_BaseMetals": [
+        "TECK-B.TO", "FM.TO", "LUN.TO", "HBM.TO",
+        "ERO.TO", "CS.TO", "NG.TO", "LUG.TO"
+    ],
+
+    # ⛏️ Uranium / Nuclear
+    "CA_Uranium": [
+        "CCO.TO", "EFR.TO", "NXE.TO"
+    ],
+
+    # ⛏️ High-growth / Spec Mining
+    "CA_Mining_Spec": [
+        "IVN.TO", "GMIN.TO", "DPM.TO", "EDR.TO", "FVI.TO"
+    ],
+
+    # 🧪 Materials / Fertilizer
+    "CA_Materials": [
+        "NTR.TO"
+    ],
+
+    # 📡 Telecom
+    "CA_Telecom": [
+        "T.TO", "BCE.TO", "RCI-B.TO", "QBR-B.TO"
+    ],
+
+    # ⚡ Utilities / Power
+    "CA_Utilities": [
+        "FTS.TO", "EMA.TO", "ALA.TO", "NPI.TO", "CPX.TO", "CU.TO"
+    ],
+
+    # 🚂 Industrials / Transport
+    "CA_Industrials": [
+        "CNR.TO", "CP.TO", "WSP.TO", "CAE.TO", "ATRL.TO"
+    ],
+
+    # 🛍️ Consumer / Retail
+    "CA_Consumer": [
+        "ATD.TO", "DOL.TO", "MRU.TO", "CTC-A.TO",
+        "EMP-A.TO", "NWC.TO"
+    ],
+
+    # 🍔 Restaurants / Food
+    "CA_Food": [
+        "QSR.TO"
+    ],
+
+    # 🧠 Tech
+    "CA_Tech": [
+        "SHOP.TO", "OTEX.TO", "GIB-A.TO", "CLS.TO"
+    ],
+
+    # 🏗️ Infrastructure / Asset Mgmt
+    "CA_Asset_Managers": [
+        "BAM.TO", "BN.TO", "BIP-UN.TO", "BIPC.TO", "BLX.TO"
+    ],
+
+    # 🏢 REITs (income / wheel-friendly)
+    "CA_REITs": [
+        "REI-UN.TO", "HR-UN.TO", "DIR-UN.TO", "CAR-UN.TO",
+        "FCR-UN.TO", "CRT-UN.TO", "PMZ-UN.TO", "CHP-UN.TO"
+    ],
+
+    # 🪙 Commodities / Trusts
+    "CA_Commodity_Trusts": [
+        "PSLV.TO", "PHYS.TO", "U-UN.TO"
+    ],
+
+    # 🪙 Crypto / Alt
+    "CA_Crypto": [
+        "HUT.TO"
+    ],
+
+    # ✈️ Aerospace / Defense
+    "CA_Aerospace": [
+        "CAE.TO", "MDA.TO"
+    ],
+
+    # 🛫 Travel / Leisure
+    "CA_Travel": [
+        "AC.TO"
+    ],
+
+    # 🧬 Misc / Small Caps / Mixed
+    "CA_Mixed": [
+        "AYA.TO", "CEU.TO", "ARIS.TO", "SOBO.TO", "H.TO",
+        "TA.TO", "L.TO", "PXT.TO", "GTWO.TO", "HWX.TO",
+        "AII.TO", "OLA.TO", "KNT.TO", "GEI.TO", "FRU.TO",
+        "SAP.TO", "AAUC.TO", "EFX.TO", "WDO.TO", "TPZ.TO",
+        "CG.TO", "EFN.TO", "X.TO", "SGD.TO", "PSK.TO",
+        "SES.TO", "EDV.TO", "TRI.TO", "ARE.TO", "TXG.TO",
+        "ELD.TO", "SDE.TO", "CDE.TO", "ATZ.TO", "GIL.TO",
+        "SSRM.TO", "VNP.TO", "TCW.TO", "CPKR.TO", "FTT.TO",
+        "EXE.TO", "LB.TO", "RSI.TO", "PSI.TO", "MER.TO",
+        "MDI.TO", "ACO-X.TO", "TIH.TO", "SOIL.TO", "PD.TO",
+        "BEP-UN.TO", "KEL.TO", "AGF-B.TO", "BIR.TO",
+        "SIA.TO", "MFI.TO", "CRR-UN.TO", "VLE.TO", "JOY.TO"
+    ],
+
+    # 🇺🇸 CDRs / Synthetic exposure (important for your system)
+    "CA_CDRs": [
+        "NVDA.NE", "TSLA.NE", "NFLX.NE"
+    ]
+
 }
 
 # ══════════════════════════════════════════════════════════════════════
