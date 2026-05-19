@@ -370,9 +370,11 @@ def test_analyze_days_stale_zero_for_fresh_data():
 
 
 def test_analyze_days_stale_correct_for_old_data():
-    stale_end = pd.Timestamp.today().normalize() - pd.Timedelta(days=10)
+    # Use a multiple of 7 so today-N lands on the same weekday as today.
+    # bdate_range never adjusts a weekday end, so days_stale is exact.
+    stale_end = pd.Timestamp.today().normalize() - pd.Timedelta(days=14)
     result = analyze_symbol(_ohlcv(n=252, end_date=stale_end))
-    assert result["days_stale"] == 10
+    assert result["days_stale"] == 14
 
 
 def test_analyze_days_stale_tz_aware_index_stripped():
